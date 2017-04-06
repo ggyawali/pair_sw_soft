@@ -1,0 +1,54 @@
+# Init Section -----------------
+
+units real
+atom_style full
+bond_style hybrid harmonic
+angle_style hybrid harmonic
+dihedral_style hybrid opls
+pair_style sw/soft 0 1 0.30 0
+
+# ----------------- Atom Definition Section -----------------
+
+read_data "decane2.data"
+
+# ----------------- Settings Section -----------------
+
+bond_coeff 1 harmonic 268.0 1.529
+bond_coeff 2 harmonic 268.0 1.529
+angle_coeff 1 harmonic 58.35 112.7
+dihedral_coeff 1 opls 1.970 -1.160 3.340 0.0
+pair_coeff * * decane.sw mW CH3 CH2
+group decane type 2 3 # define the decane atoms as a group
+
+# ----------------- Run Section -----------------
+timestep 5.0
+
+#fix   1 all nvt temp 300.0 300.0 100.0
+fix    1 all npt temp 315.0 315.0 100.0 iso 1.0 1.0 1000.0
+fix TEMP decane temp/rescale 1 315 315 2 1  #rescale the temperature of the decane to 300K
+
+velocity all create 315.0 4928459 rot yes dist gaussian #create the gaussion velocity distribution at 300K
+run 30000
+
+thermo_style    multi
+thermo          1000
+
+variable mu equal ramp(0.0,1.0)   #ramp up the mu from 0 to 1
+
+fix 2 all adapt/fep 250000 pair sw/soft mu * * v_mu after yes # apply a fix to mu parameter every 5 million/20 steps
+
+fix 3 all print 250000 "adapt mu = ${mu}"
+
+variable dmu equal 0.005 # value of the pertubation
+
+compute FEP all fep 315 pair sw/soft mu * * v_dmu volume yes #compute the FEP with volume consideration
+
+compute decane_temp decane temp #compute the average temperature of the decane atoms
+
+fix FEP all ave/time 100 2500 250000 c_FEP[1] c_FEP[2] c_FEP[3] file decane.fep #write out the results from FEP calculations to decane.fep
+
+fix decane_temp decane ave/time 10 20 20000 c_decane_temp file decane.temp #write out the temperatures every 20000 steps
+
+run 5000000
+#run for 5 million steps
+
