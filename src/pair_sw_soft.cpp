@@ -1,4 +1,19 @@
-//Soft core SW potential for 2 body term by Gaurav Gyawali
+/* ----------------------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------
+   Contributing author: Aidan Thompson (SNL)
+------------------------------------------------------------------------- */
 
 #include <iostream>
 #include <math.h>
@@ -84,6 +99,7 @@ void PairSWSoft::compute(int eflag, int vflag)
   int nlocal = atom->nlocal;
   int newton_pair = force->newton_pair;
   double  muij;
+  double  muijk;
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;
@@ -169,7 +185,16 @@ void PairSWSoft::compute(int eflag, int vflag)
         ktype = map[type[k]];
         ikparam = elem2param[itype][ktype][ktype];
         ijkparam = elem2param[itype][jtype][ktype];
-
+	
+	if ((itype==type_solvent && jtype!=type_solvent) || (jtype==type_solvent && ktype!=type_solvent) || (ktype ==type_solvent && itype != type_solvent)){
+		muijk = mu[1][1];
+		}
+		else
+		{
+		muijk = 1;
+		}	
+        //cout <<itype <<" " <<jtype <<" " <<ktype<<" " <<muijk << "\n";
+     
         delr2[0] = x[k][0] - xtmp;
         delr2[1] = x[k][1] - ytmp;
         delr2[2] = x[k][2] - ztmp;
@@ -177,18 +202,22 @@ void PairSWSoft::compute(int eflag, int vflag)
         if (rsq2 >= params[ikparam].cutsq) continue;
 
         threebody(&params[ijparam],&params[ikparam],&params[ijkparam],
-                  rsq1,rsq2,delr1,delr2,fj,fk,eflag,evdwl);
+                  rsq1,rsq2,delr1,delr2,fj,fk,eflag,evdwl,muijk);
 
-        f[i][0] -= fj[0] + fk[0];
-        f[i][1] -= fj[1] + fk[1];
-        f[i][2] -= fj[2] + fk[2];
-        f[j][0] += fj[0];
-        f[j][1] += fj[1];
-        f[j][2] += fj[2];
-        f[k][0] += fk[0];
-        f[k][1] += fk[1];
-        f[k][2] += fk[2];
+        f[i][0] -= muijk * (fj[0] + fk[0]);
+        f[i][1] -= muijk * (fj[1] + fk[1]);
+        f[i][2] -= muijk * (fj[2] + fk[2]);
+        f[j][0] += muijk * (fj[0]);
+        f[j][1] += muijk * fj[1];
+        f[j][2] += muijk * fj[2];
+        f[k][0] += muijk * fk[0];
+        f[k][1] += muijk * fk[1];
+        f[k][2] += muijk * fk[2];
 
+        cout <<"\n"<< i <<" "<< j <<" "<< k ;
+	cout <<"\n"<<itype<<" "<<jtype<<" "<<ktype<<" " <<muijk << " " << evdwl << " " << muijk*evdwl;
+
+	evdwl = evdwl * muijk;
         if (evflag) ev_tally3(i,j,k,evdwl,0.0,fj,fk,delr1,delr2);
       }
     }
@@ -221,8 +250,8 @@ void PairSWSoft::settings(int narg, char **arg)
   powern = force->numeric(FLERR, arg[1]);
   alpha = force->numeric(FLERR,arg[2]);
   type_solvent=force->numeric(FLERR, arg[3]);
-  //printf("Soft core parameters mu_one, n, alpha ");
-  //printf("%5.3f %5.3f %5.3f ", mu_one, powern, alpha);
+  printf("Soft core parameters mu_one, n, alpha ");
+  printf("%5.3f %5.3f %5.3f ", mu_one, powern, alpha);
   int n = atom->ntypes;
   cout<<n<<"\n";
   memory->create(mu, 100, 100, "pair:mu");
@@ -592,7 +621,7 @@ void PairSWSoft::twobody(Param *param, double rsq, double &fforce,
 void PairSWSoft::threebody(Param *paramij, Param *paramik, Param *paramijk,
                        double rsq1, double rsq2,
                        double *delr1, double *delr2,
-                       double *fj, double *fk, int eflag, double &eng)
+                       double *fj, double *fk, int eflag, double &eng, double mupp)
 {
   double r1,rinvsq1,rainv1,gsrainv1,gsrainvsq1,expgsrainv1;
   double r2,rinvsq2,rainv2,gsrainv2,gsrainvsq2,expgsrainv2;
@@ -629,17 +658,16 @@ void PairSWSoft::threebody(Param *paramij, Param *paramik, Param *paramijk,
   facang = paramijk->lambda_epsilon2 * facexp*delcs;
   facang12 = rinv12*facang;
   csfacang = cs*facang;
-  csfac1 = rinvsq1*csfacang;
-
-  fj[0] = delr1[0]*(frad1+csfac1)-delr2[0]*facang12;
-  fj[1] = delr1[1]*(frad1+csfac1)-delr2[1]*facang12;
-  fj[2] = delr1[2]*(frad1+csfac1)-delr2[2]*facang12;
+  csfac1 = rinvsq1*csfacang; 
+  fj[0] = (delr1[0]*(frad1+csfac1)-delr2[0]*facang12);
+  fj[1] = (delr1[1]*(frad1+csfac1)-delr2[1]*facang12);
+  fj[2] = (delr1[2]*(frad1+csfac1)-delr2[2]*facang12);
 
   csfac2 = rinvsq2*csfacang;
 
-  fk[0] = delr2[0]*(frad2+csfac2)-delr1[0]*facang12;
-  fk[1] = delr2[1]*(frad2+csfac2)-delr1[1]*facang12;
-  fk[2] = delr2[2]*(frad2+csfac2)-delr1[2]*facang12;
+  fk[0] = (delr2[0]*(frad2+csfac2)-delr1[0]*facang12);
+  fk[1] = (delr2[1]*(frad2+csfac2)-delr1[1]*facang12);
+  fk[2] = (delr2[2]*(frad2+csfac2)-delr1[2]*facang12);
 
   if (eflag) eng = facrad;
 }
