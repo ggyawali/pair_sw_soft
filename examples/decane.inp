@@ -23,7 +23,6 @@ group decane type 2 3 # define the decane atoms as a group
 # ----------------- Run Section -----------------
 timestep 5.0
 
-#fix   1 all nvt temp 300.0 300.0 100.0
 fix    1 all npt temp 315.0 315.0 100.0 iso 1.0 1.0 1000.0
 fix TEMP decane temp/rescale 1 315 315 2 1  #rescale the temperature of the decane to 300K
 
